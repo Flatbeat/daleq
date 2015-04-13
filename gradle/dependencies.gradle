@@ -30,7 +30,7 @@ ext {
             slf4jSimple: "org.slf4j:slf4j-simple:1.5.6",
 
             jodaTime: "joda-time:joda-time:2.1",
-            guava: "com.google.guava:guava:13.0.1",
+            guava: "com.google.guava:guava:10.0.1",
             jsr305: 'com.google.code.findbugs:jsr305:2.0.1',
             commonsLang: "commons-lang:commons-lang:2.6",
             commonsCodec: "commons-codec:commons-codec:1.7",
