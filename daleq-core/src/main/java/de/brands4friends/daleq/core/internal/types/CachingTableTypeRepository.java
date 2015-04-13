@@ -17,19 +17,23 @@
 package de.brands4friends.daleq.core.internal.types;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
 
-import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 import de.brands4friends.daleq.core.DaleqBuildException;
+import de.brands4friends.daleq.core.FieldType;
+import de.brands4friends.daleq.core.FieldTypeReference;
 import de.brands4friends.daleq.core.TableType;
 import de.brands4friends.daleq.core.TableTypeReference;
 
@@ -40,38 +44,69 @@ public class CachingTableTypeRepository implements TableTypeRepository {
     private final List<TableTypeResolver> resolvers;
 
     public CachingTableTypeRepository() {
-        this.resolvers = new CopyOnWriteArrayList<TableTypeResolver>(Lists.newArrayList(
+        resolvers = new CopyOnWriteArrayList<TableTypeResolver>(Lists.newArrayList(
                 new ClassBasedTableTypeResolver()
         ));
-        this.cache = CacheBuilder.newBuilder().build();
+        cache = CacheBuilder.newBuilder().build(cacheLoader());
     }
 
     @Override
     public TableType get(final TableTypeReference tableRef) {
-        final TableType tableType = cache.getIfPresent(tableRef);
-        if (tableType != null) {
-            return tableType;
-        }
-
-        final TableType resolved = doGet(tableRef);
-        cache.put(tableRef, resolved);
-        return resolved;
-    }
-
-    private TableType doGet(final TableTypeReference tableRef) {
-        final Optional<TableTypeResolver> resolver = Iterables.tryFind(resolvers, new Predicate<TableTypeResolver>() {
-            @Override
-            public boolean apply(@Nullable final TableTypeResolver resolver) {
-                if (resolver == null) {
-                    return false;
-                }
-                return resolver.canResolve(tableRef);
+        try {
+            TableType tableType =  cache.get(tableRef);
+            if(tableType instanceof ExceptionTableType) {
+                throw new DaleqBuildException("No TableTypeResolver registered for " + tableRef);
             }
-        });
-        if (!resolver.isPresent()) {
+            return tableType;
+        } catch (ExecutionException e) {
             throw new DaleqBuildException("No TableTypeResolver registered for " + tableRef);
         }
-
-        return resolver.get().resolve(tableRef);
     }
+
+    private CacheLoader<TableTypeReference, TableType> cacheLoader() {
+        return new CacheLoader<TableTypeReference, TableType>() {
+
+            @Override
+            public TableType load(final TableTypeReference tableRef) throws Exception {
+                try {
+                    TableTypeResolver resolver = findTableTypeResolver(tableRef);
+                    return resolver.resolve(tableRef);
+                } catch (NoSuchElementException ex) {
+                    return new ExceptionTableType();
+                }
+            }
+
+            private TableTypeResolver findTableTypeResolver(final TableTypeReference tableRef) {
+                return Iterables.find(resolvers, new Predicate<TableTypeResolver>() {
+                    @Override
+                    public boolean apply(@Nullable final TableTypeResolver resolver) {
+                        if (resolver == null) {
+                            return false;
+                        }
+                        return resolver.canResolve(tableRef);
+                    }
+                });
+            }
+        };
+    }
+
+    private class ExceptionTableType implements TableType {
+
+        @Override
+        public String getName() {
+            throw new DaleqBuildException("No TableTypeResolver registered.");
+        }
+
+        @Override
+        public List<FieldType> getFields() {
+            throw new DaleqBuildException("No TableTypeResolver registered.");
+        }
+
+        @Override
+        public FieldType findFieldBy(FieldTypeReference fieldRef) {
+            throw new DaleqBuildException("No TableTypeResolver registered.");
+        }
+
+    }
+
 }
